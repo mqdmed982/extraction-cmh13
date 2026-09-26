@@ -26,7 +26,6 @@ function getImapHost(email) {
     throw new Error('Khedam ghir b @gmail.com wla @sapo.pt safi!');
 }
 
-// ─── CONNEXION IMAP ───
 async function getImapConnection(email, password) {
     const host = getImapHost(email);
     const cleanPassword = (password || '').trim().replace(/\s+/g, '');
@@ -44,12 +43,45 @@ async function getImapConnection(email, password) {
     return await imaps.connect(config);
 }
 
-// ─── ROUTE: ACCUEIL ───
+// ─── دالة استخراج الـ Headers كاملين بدون خطأ [object Object] ───
+function extractFullHeadersString(msg) {
+    // 1. محاولة استخراج الـ Raw Headers من الإيميل الكامل
+    const allPart = msg.parts.find(p => p.which === '');
+    if (allPart && allPart.body) {
+        const rawStr = typeof allPart.body === 'string' ? allPart.body : allPart.body.toString('utf-8');
+        const headerEnd = rawStr.search(/\r?\n\r?\n/);
+        if (headerEnd !== -1) {
+            return rawStr.substring(0, headerEnd);
+        }
+    }
+
+    // 2. إذا كان جزء HEADER
+    const headerPart = msg.parts.find(p => p.which === 'HEADER');
+    if (headerPart && headerPart.body) {
+        if (typeof headerPart.body === 'string') {
+            return headerPart.body;
+        }
+        // إذا كان Object: نفكك كل Header سطر بسطر باش مايخرجش [object Object]
+        if (typeof headerPart.body === 'object') {
+            const lines = [];
+            for (const [key, val] of Object.entries(headerPart.body)) {
+                const headerName = key.split('-').map(s => s.charAt(0).toUpperCase() + s.slice(1)).join('-');
+                if (Array.isArray(val)) {
+                    val.forEach(v => lines.push(`${headerName}: ${v}`));
+                } else {
+                    lines.push(`${headerName}: ${val}`);
+                }
+            }
+            return lines.join('\r\n');
+        }
+    }
+    return '';
+}
+
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// ─── ROUTE: CONNECT TO IMAP ───
 app.post('/connect', async (req, res) => {
     const { email, password } = req.body;
     if (!email || !password) {
@@ -93,18 +125,11 @@ app.post('/connect', async (req, res) => {
         });
 
     } catch (err) {
-        console.error('IMAP Connect Error:', err);
-        if (connection) {
-            try { connection.end(); } catch (e) {}
-        }
-        return res.status(401).json({
-            success: false,
-            error: err.message || 'IMAP Connection failed.'
-        });
+        if (connection) { try { connection.end(); } catch (e) {} }
+        return res.status(401).json({ success: false, error: err.message || 'IMAP Connection failed.' });
     }
 });
 
-// ─── ROUTE: EXTRACTION & HEADERS MODIFICATION ───
 app.post('/extract', async (req, res) => {
     const email = req.body.email || req.session.email;
     const password = req.body.password || req.session.password;
@@ -127,8 +152,8 @@ app.post('/extract', async (req, res) => {
             return res.send('❌ The selected folder is empty.');
         }
 
+        // جلب الإيميل كاملاً
         const results = await connection.search(['ALL'], { bodies: ['HEADER', ''], markSeen: false });
-
         if (!results || results.length === 0) {
             connection.end();
             return res.send('❌ No messages found.');
@@ -136,7 +161,6 @@ app.post('/extract', async (req, res) => {
 
         results.reverse();
         const selected = results.slice(start - 1, start - 1 + limit);
-
         if (selected.length === 0) {
             connection.end();
             return res.send('❌ No messages found in the requested range.');
@@ -146,42 +170,43 @@ app.post('/extract', async (req, res) => {
 
         for (const msg of selected) {
             const allPart = msg.parts.find(p => p.which === '');
-            const rawEmail = allPart ? allPart.body : '';
-            const parsed = await simpleParser(rawEmail);
-            const headersPart = msg.parts.find(p => p.which === 'HEADER');
-            let rawHeaders = headersPart ? headersPart.body : '';
+            const rawEmail = allPart ? (typeof allPart.body === 'string' ? allPart.body : allPart.body.toString('utf-8')) : '';
 
-            let headerStr = typeof rawHeaders === 'string' ? rawHeaders : (rawHeaders ? rawHeaders.toString('utf-8') : '');
-            if (!headerStr && rawEmail) {
-                const rawEmailStr = typeof rawEmail === 'string' ? rawEmail : rawEmail.toString('utf-8');
-                const splitIdx = rawEmailStr.indexOf('\r\n\r\n');
-                headerStr = splitIdx !== -1 ? rawEmailStr.substring(0, splitIdx) : rawEmailStr.split('\n\n')[0];
-            }
+            // استخراج جميع Headers الحقيقيين كاملين
+            const headerStr = extractFullHeadersString(msg);
+            const headerEndIndex = rawEmail.search(/\r?\n\r?\n/);
+            const bodyStr = headerEndIndex !== -1 ? rawEmail.substring(headerEndIndex).trim() : '';
 
             let item = '';
 
             switch (mode) {
-                case 'justtext':
+                case 'justtext': {
+                    const parsed = await simpleParser(rawEmail);
                     item = (parsed.text || '').trim();
                     break;
+                }
 
-                case 'bodyonly':
-                    item = (parsed.html || parsed.text || '').trim();
+                case 'bodyonly': {
+                    const parsed = await simpleParser(rawEmail);
+                    item = (parsed.html || parsed.text || bodyStr).trim();
                     break;
+                }
 
-                case 'original':
-                    item = (typeof rawEmail === 'string' ? rawEmail : rawEmail.toString('utf-8')).trim();
+                case 'original': {
+                    item = rawEmail.trim();
                     break;
+                }
 
-                case 'receivedonly':
+                case 'receivedonly': {
                     item = headerStr
                         .split(/\r?\n/)
                         .filter(l => l.toLowerCase().startsWith('received:'))
                         .join('\n') || 'No Received headers found';
                     break;
+                }
 
                 case 'headersonly': {
-                    // ─── Headers Parameters Modification ───
+                    // ─── تعديل Headers ديال الـ Newsletter مع الحفاظ على كل السطور الأصلية ───
                     const p_frname = req.body.P_FRNAME || '[P_FRNAME]';
                     const lan6 = req.body.LAN6 || '[6LAN]';
                     const p_rpath = req.body.P_RPATH || '[P_RPATH]';
@@ -198,29 +223,29 @@ app.post('/extract', async (req, res) => {
                         let line = lines[j];
                         const lower = line.toLowerCase();
 
-                        // 1. Modifier From
+                        // 1. تعديل From
                         if (lower.startsWith('from:')) {
                             const emailMatch = line.match(/<([^>]+)>/);
                             if (emailMatch) {
                                 line = `From: "${p_frname}" <${emailMatch[1]}>`;
                             } else {
-                                line = `From: "${p_frname}" <${email}>`;
+                                line = `From: "${p_frname}"`;
                             }
                         }
-                        // 2. Modifier Return-Path
+                        // 2. تعديل Return-Path
                         else if (lower.startsWith('return-path:')) {
                             line = `Return-Path: <${p_rpath}>`;
                             hasReturnPath = true;
                         }
-                        // 3. Modifier Subject
+                        // 3. تعديل Subject
                         else if (lower.startsWith('subject:')) {
                             line = `Subject: ${subjectVal}`;
                         }
-                        // 4. Modifier Boundary
+                        // 4. تعديل Boundary ف Content-Type
                         else if (lower.includes('boundary=')) {
                             line = line.replace(/boundary=["']?[^"';\r\n]+["']?/i, `boundary="${boundary}"`);
                         }
-                        // 5. Modifier Language
+                        // 5. تعديل Content-Language
                         else if (lower.startsWith('content-language:')) {
                             line = `Content-Language: ${lan6}`;
                             hasContentLanguage = true;
@@ -229,20 +254,9 @@ app.post('/extract', async (req, res) => {
                         newLines.push(line);
                     }
 
-                    if (!hasReturnPath) {
-                        newLines.unshift(`Return-Path: <${p_rpath}>`);
-                    }
-                    if (!hasContentLanguage) {
-                        newLines.push(`Content-Language: ${lan6}`);
-                    }
-                    if (addSender1) {
-                        const senderIdx = newLines.findIndex(l => l.toLowerCase().startsWith('sender:'));
-                        if (senderIdx !== -1) {
-                            newLines[senderIdx] = `Sender: <${p_rpath}>`;
-                        } else {
-                            newLines.unshift(`Sender: <${p_rpath}>`);
-                        }
-                    }
+                    if (!hasReturnPath) newLines.unshift(`Return-Path: <${p_rpath}>`);
+                    if (!hasContentLanguage) newLines.push(`Content-Language: ${lan6}`);
+                    if (addSender1) newLines.unshift(`Sender: <${p_rpath}>`);
 
                     item = newLines.join('\r\n');
                     break;
@@ -252,23 +266,29 @@ app.post('/extract', async (req, res) => {
                 default: {
                     const domainRep = req.body.domain || '[RP]';
                     const eidTag = req.body.eid || '[EID]';
+                    const replaceDate = req.body.replaceDate === 'on' || req.body.replaceDate === true;
+                    const replaceTo = req.body.replaceTo === 'on' || req.body.replaceTo === true;
+                    const keepReceived = req.body.keepReceived === 'on' || req.body.keepReceived === true;
+                    const keepReplyTo = req.body.keepReplyTo === 'on' || req.body.keepReplyTo === true;
+                    const addSender = req.body.addSender === 'on' || req.body.addSender === true;
+                    const addCc = req.body.addCc === 'on' || req.body.addCc === true;
+
                     const lines = headerStr.split(/\r?\n/);
                     const cleanH = [];
 
                     for (let line of lines) {
                         const lower = line.toLowerCase();
-                        if (!req.body.keepReceived && lower.startsWith('received:')) continue;
-                        if (!req.body.keepReplyTo && lower.startsWith('reply-to:')) continue;
-                        if (req.body.replaceDate && lower.startsWith('date:')) line = 'Date: [DATE]';
-                        if (req.body.replaceTo && lower.startsWith('to:')) line = `To: ${domainRep}`;
+                        if (!keepReceived && lower.startsWith('received:')) continue;
+                        if (!keepReplyTo && lower.startsWith('reply-to:')) continue;
+                        if (replaceDate && lower.startsWith('date:')) line = 'Date: [DATE]';
+                        if (replaceTo && lower.startsWith('to:')) line = `To: ${domainRep}`;
                         if (lower.startsWith('message-id:')) line = `Message-ID: <${eidTag}>`;
                         cleanH.push(line);
                     }
-                    if (req.body.addSender) cleanH.unshift(`Sender: ${email}`);
-                    if (req.body.addCc) cleanH.push(`Cc: ${domainRep}`);
+                    if (addSender) cleanH.unshift(`Sender: ${email}`);
+                    if (addCc) cleanH.push(`Cc: ${domainRep}`);
 
-                    const bodyText = (parsed.html || parsed.text || '').trim();
-                    item = `${cleanH.join('\r\n')}\r\n\r\n${bodyText}`;
+                    item = `${cleanH.join('\r\n')}\r\n\r\n${bodyStr}`;
                     break;
                 }
             }
@@ -280,10 +300,7 @@ app.post('/extract', async (req, res) => {
         res.send(extracted.join('\n\n__SEP__\n\n'));
 
     } catch (err) {
-        console.error('Extract Error:', err);
-        if (connection) {
-            try { connection.end(); } catch (e) {}
-        }
+        if (connection) { try { connection.end(); } catch (e) {} }
         return res.status(500).send('❌ Extraction error: ' + err.message);
     }
 });
