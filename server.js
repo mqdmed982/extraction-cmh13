@@ -18,19 +18,13 @@ app.use(session({
 
 app.use(express.static(path.join(__dirname, 'public')));
 
-// ─── الدالة لي كانت ناقصاك (Gmail و Sapo.pt فقط) ───
 function getImapHost(email) {
     const cleanEmail = (email || '').toLowerCase().trim();
-    if (cleanEmail.includes('gmail')) {
-        return 'imap.gmail.com';
-    }
-    if (cleanEmail.includes('sapo.pt') || cleanEmail.includes('sapo')) {
-        return 'imap.sapo.pt';
-    }
+    if (cleanEmail.includes('gmail')) return 'imap.gmail.com';
+    if (cleanEmail.includes('sapo.pt') || cleanEmail.includes('sapo')) return 'imap.sapo.pt';
     throw new Error('Khedam ghir b @gmail.com wla @sapo.pt safi!');
 }
 
-// ─── اتصال بـ IMAP ───
 async function getImapConnection(email, password) {
     const host = getImapHost(email);
     const cleanPassword = (password || '').trim().replace(/\s+/g, '');
@@ -48,12 +42,10 @@ async function getImapConnection(email, password) {
     return await imaps.connect(config);
 }
 
-// ─── الصفحة الرئيسية ───
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// ─── ROUTE: CONNECT ───
 app.post('/connect', async (req, res) => {
     const { email, password } = req.body;
     if (!email || !password) {
@@ -97,25 +89,18 @@ app.post('/connect', async (req, res) => {
         });
 
     } catch (err) {
-        console.error('IMAP Connect Error:', err);
-        if (connection) {
-            try { connection.end(); } catch (e) {}
-        }
-        return res.status(401).json({
-            success: false,
-            error: err.message || 'IMAP Connection failed.'
-        });
+        if (connection) { try { connection.end(); } catch (e) {} }
+        return res.status(401).json({ success: false, error: err.message || 'IMAP Connection failed.' });
     }
 });
 
-// ─── ROUTE: EXTRACT ───
 app.post('/extract', async (req, res) => {
     const email = req.body.email || req.session.email;
     const password = req.body.password || req.session.password;
     const label = req.body.label || 'INBOX';
     const start = Math.max(1, parseInt(req.body.start, 10) || 1);
     const limit = Math.max(1, parseInt(req.body.limit, 10) || 10);
-    const mode = req.body.mode || 'clean';
+    const mode = req.body.mode || 'headersonly';
 
     if (!email || !password) {
         return res.status(400).send('❌ Please connect your email first.');
@@ -132,7 +117,6 @@ app.post('/extract', async (req, res) => {
         }
 
         const results = await connection.search(['ALL'], { bodies: ['HEADER', ''], markSeen: false });
-
         if (!results || results.length === 0) {
             connection.end();
             return res.send('❌ No messages found.');
@@ -140,7 +124,6 @@ app.post('/extract', async (req, res) => {
 
         results.reverse();
         const selected = results.slice(start - 1, start - 1 + limit);
-
         if (selected.length === 0) {
             connection.end();
             return res.send('❌ No messages found in the requested range.');
@@ -153,7 +136,14 @@ app.post('/extract', async (req, res) => {
             const rawEmail = allPart ? allPart.body : '';
             const parsed = await simpleParser(rawEmail);
             const headersPart = msg.parts.find(p => p.which === 'HEADER');
-            const rawHeaders = headersPart ? headersPart.body : '';
+            let rawHeaders = headersPart ? headersPart.body : '';
+
+            let headerStr = typeof rawHeaders === 'string' ? rawHeaders : (rawHeaders ? rawHeaders.toString('utf-8') : '');
+            if (!headerStr && rawEmail) {
+                const rawEmailStr = typeof rawEmail === 'string' ? rawEmail : rawEmail.toString('utf-8');
+                const splitIdx = rawEmailStr.indexOf('\r\n\r\n');
+                headerStr = splitIdx !== -1 ? rawEmailStr.substring(0, splitIdx) : rawEmailStr.split('\n\n')[0];
+            }
 
             let item = '';
 
@@ -168,35 +158,71 @@ app.post('/extract', async (req, res) => {
                     item = (typeof rawEmail === 'string' ? rawEmail : rawEmail.toString('utf-8')).trim();
                     break;
                 case 'receivedonly':
-                    item = (rawHeaders || rawEmail).toString()
+                    item = headerStr
                         .split(/\r?\n/)
                         .filter(l => l.toLowerCase().startsWith('received:'))
                         .join('\n') || 'No Received headers found';
                     break;
-                case 'headersonly':
+
+                case 'headersonly': {
+                    // Modification dyal les Headers dial Newsletter
                     const p_frname = req.body.P_FRNAME || '[P_FRNAME]';
                     const lan6 = req.body.LAN6 || '[6LAN]';
                     const p_rpath = req.body.P_RPATH || '[P_RPATH]';
                     const subjectVal = req.body.SUBJECT_VAL || '[S]';
                     const boundary = req.body.BOUNDARY || '[BND]';
+                    const addSender1 = req.body.addSender1 === 'on' || req.body.addSender1 === true;
 
-                    const customH = [];
-                    if (req.body.addSender1) customH.push(`Sender: <${p_rpath}>`);
-                    customH.push(
-                        `Return-Path: <${p_rpath}>`,
-                        `From: "${p_frname}" <${email}>`,
-                        `Subject: ${subjectVal}`,
-                        `Date: [DATE]`,
-                        `Content-Type: multipart/alternative; boundary="${boundary}"`,
-                        `Content-Language: ${lan6}`
-                    );
-                    item = customH.join('\r\n');
+                    const lines = headerStr.split(/\r?\n/);
+                    const newLines = [];
+                    let hasReturnPath = false;
+                    let hasContentLanguage = false;
+
+                    for (let j = 0; j < lines.length; j++) {
+                        let line = lines[j];
+                        const lower = line.toLowerCase();
+
+                        if (lower.startsWith('from:')) {
+                            const emailMatch = line.match(/<([^>]+)>/);
+                            if (emailMatch) {
+                                line = `From: "${p_frname}" <${emailMatch[1]}>`;
+                            } else {
+                                line = `From: "${p_frname}" <${email}>`;
+                            }
+                        } else if (lower.startsWith('return-path:')) {
+                            line = `Return-Path: <${p_rpath}>`;
+                            hasReturnPath = true;
+                        } else if (lower.startsWith('subject:')) {
+                            line = `Subject: ${subjectVal}`;
+                        } else if (lower.includes('boundary=')) {
+                            line = line.replace(/boundary=["']?[^"';\r\n]+["']?/i, `boundary="${boundary}"`);
+                        } else if (lower.startsWith('content-language:')) {
+                            line = `Content-Language: ${lan6}`;
+                            hasContentLanguage = true;
+                        }
+                        newLines.push(line);
+                    }
+
+                    if (!hasReturnPath) newLines.unshift(`Return-Path: <${p_rpath}>`);
+                    if (!hasContentLanguage) newLines.push(`Content-Language: ${lan6}`);
+                    if (addSender1) {
+                        const senderIdx = newLines.findIndex(l => l.toLowerCase().startsWith('sender:'));
+                        if (senderIdx !== -1) {
+                            newLines[senderIdx] = `Sender: <${p_rpath}>`;
+                        } else {
+                            newLines.unshift(`Sender: <${p_rpath}>`);
+                        }
+                    }
+
+                    item = newLines.join('\r\n');
                     break;
+                }
+
                 case 'clean':
-                default:
+                default: {
                     const domainRep = req.body.domain || '[RP]';
                     const eidTag = req.body.eid || '[EID]';
-                    const lines = (rawHeaders || '').toString().split(/\r?\n/);
+                    const lines = headerStr.split(/\r?\n/);
                     const cleanH = [];
 
                     for (let line of lines) {
@@ -213,6 +239,7 @@ app.post('/extract', async (req, res) => {
 
                     item = `${cleanH.join('\r\n')}\r\n\r\n${(parsed.html || parsed.text || '').trim()}`;
                     break;
+                }
             }
             extracted.push(item);
         }
@@ -231,7 +258,6 @@ app.get('/logout', (req, res) => {
     req.session.destroy(() => res.redirect('/'));
 });
 
-// ضرورية باش يخدم فـ السيرفر العادي وفـ Vercel
 if (process.env.NODE_ENV !== 'production') {
     app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 }
