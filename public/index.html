@@ -1,0 +1,62 @@
+<div class="field">
+    <label class="f-label">ESP Provider</label>
+    <select id="espSelect" class="f-input" onchange="autoFillDomain()">
+        <option value="gmail">Gmail (imap.gmail.com)</option>
+        <option value="sapo">Sapo.pt (imap.sapo.pt)</option>
+    </select>
+</div>
+
+<div class="field">
+    <label class="f-label">Email Address</label>
+    <input name="email" id="emailInput" class="f-input" type="email" placeholder="you@gmail.com أو you@sapo.pt" required>
+</div>
+
+async function connectImap() {
+    const email = document.querySelector('input[name="email"]').value.trim();
+    const password = document.getElementById('passwordInput').value.trim();
+    const btn = document.querySelector('.btn-connect');
+
+    if (!email || !password) {
+        alert('Please enter email & app password!');
+        return;
+    }
+
+    btn.disabled = true;
+    btn.innerHTML = 'Connecting...';
+
+    try {
+        const resp = await fetch('/connect', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams({ email, password }).toString()
+        });
+        const data = await resp.json();
+
+        if (data.success) {
+            document.getElementById('connDot').classList.add('on');
+            document.getElementById('connLabel').textContent = 'Connected';
+
+            const sel = document.getElementById('labelSelect');
+            sel.innerHTML = '';
+            data.folders.forEach(f => {
+                const opt = document.createElement('option');
+                opt.value = f.name;
+                opt.textContent = f.name;
+                if (f.name.toUpperCase() === 'INBOX') {
+                    opt.selected = true;
+                    opt.setAttribute('data-count', data.defaultInboxCount || 0);
+                }
+                sel.appendChild(opt);
+            });
+            updateCount();
+        } else {
+            alert('Error: ' + data.error);
+        }
+    } catch (err) {
+        alert('Connection error: ' + err.message);
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-plug-fill"></i> Connect to IMAP';
+    }
+}
+document.querySelector('.btn-connect').onclick = (e) => { e.preventDefault(); connectImap(); };

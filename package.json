@@ -1,0 +1,15 @@
+{
+  "name": "email-extractor-cmh13",
+  "version": "1.0.0",
+  "description": "IMAP Email Extraction & Header Cleaner App",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "express-session": "^1.18.0",
+    "imap-simple": "^5.1.0",
+    "mailparser": "^3.7.1"
+  }
+}
