@@ -28,7 +28,13 @@ function getImapHost(email) {
 
 async function getImapConnection(email, password) {
     const host = getImapHost(email);
-    const cleanPassword = (password || '').trim().replace(/\s+/g, '');
+    let cleanPassword = (password || '').trim();
+
+    // Gmail كنزولو منو الفراغات حيت App Password كيكون 16 حرف مقسم
+    if (host === 'imap.gmail.com') {
+        cleanPassword = cleanPassword.replace(/\s+/g, '');
+    }
+
     const config = {
         imap: {
             user: email.trim(),
@@ -36,8 +42,11 @@ async function getImapConnection(email, password) {
             host: host,
             port: 993,
             tls: true,
-            tlsOptions: { rejectUnauthorized: false },
-            authTimeout: 15000
+            tlsOptions: { 
+                rejectUnauthorized: false,
+                servername: host 
+            },
+            authTimeout: 20000
         }
     };
     return await imaps.connect(config);
