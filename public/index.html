@@ -356,4 +356,508 @@
         }
         .spin {
             width: 18px; height: 18px; border: 2px solid var(--line);
-            border-top-color: var(--accent); border-radiu
+            border-top-color: var(--accent); border-radius: 50%;
+            animation: spin 0.7s linear infinite; display: inline-block;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
+</head>
+
+<body>
+<div class="wrap">
+
+    <!-- TOPBAR -->
+    <div class="topbar">
+        <div class="brand">
+            <div class="brand-logo">📧</div>
+            <div>
+                <div class="brand-name">Email Extraction #CMH9</div>
+                <div class="brand-tag">CMH9 &nbsp;·&nbsp; v2.3</div>
+            </div>
+        </div>
+        <div class="topbar-right">
+            <div class="status-pill">
+                <div class="status-dot" id="connDot"></div>
+                <span id="connLabel">Disconnected</span>
+            </div>
+            <button id="themeBtn" onclick="toggleTheme()" title="Toggle Dark/Light">
+                <i class="bi bi-sun-fill" id="themeIco"></i>
+            </button>
+        </div>
+    </div>
+
+    <!-- FORM -->
+    <form id="mainForm" onsubmit="return false;">
+    <div class="layout">
+
+        <!-- ═══ LEFT SIDEBAR ═══ -->
+        <div style="display:flex;flex-direction:column;gap:20px;">
+
+            <!-- CONNECTION -->
+            <div class="panel">
+                <div class="panel-head">
+                    <div class="panel-ico ico-blue">🔌</div>
+                    <span class="panel-title">Connection</span>
+                </div>
+                <div class="panel-body">
+                    <div class="field">
+                        <label class="f-label">ESP Provider</label>
+                        <select id="espSelect" class="f-input" onchange="onEspChange()">
+                            <option value="gmail">Gmail (imap.gmail.com)</option>
+                            <option value="sapo">Sapo.pt (imap.sapo.pt)</option>
+                        </select>
+                    </div>
+
+                    <div class="field">
+                        <label class="f-label">Email Address</label>
+                        <input name="email" id="emailInput" class="f-input" type="email" placeholder="perlamer89@gmail.com" required value="perlamer89@gmail.com">
+                    </div>
+
+                    <div class="field">
+                        <label class="f-label">App Password</label>
+                        <div class="input-wrap">
+                            <input type="password" name="password" id="passwordInput" class="f-input" style="padding-right:40px;" placeholder="xxxx xxxx xxxx xxxx" required>
+                            <span class="eye-btn" onclick="togglePassword()">
+                                <i class="bi bi-eye" id="eyeIco"></i>
+                            </span>
+                        </div>
+                        <div class="field-hint" id="espNotice">
+                            <i class="bi bi-info-circle"></i> <span>Requires 16-character Google App Password</span>
+                        </div>
+                    </div>
+
+                    <button type="button" class="btn-connect" id="btnConnect" onclick="connectImap()">
+                        <i class="bi bi-plug-fill"></i> Connect to IMAP
+                    </button>
+                </div>
+            </div>
+
+            <!-- DOWNLOAD MODE -->
+            <div class="panel">
+                <div class="panel-head">
+                    <div class="panel-ico ico-cyan">⚙️</div>
+                    <span class="panel-title">Download Mode</span>
+                </div>
+                <div class="panel-body">
+                    <div class="mode-stack">
+
+                        <label class="mode-card">
+                            <input type="radio" name="mode" value="clean">
+                            <div class="mode-inner">
+                                <div class="mode-ico">🧹</div>
+                                <div>
+                                    <div class="mode-title">Clean Headers</div>
+                                    <div class="mode-desc">News-style with header rewrite</div>
+                                </div>
+                                <div class="radio-ring"></div>
+                            </div>
+                        </label>
+
+                        <label class="mode-card">
+                            <input type="radio" name="mode" value="justtext">
+                            <div class="mode-inner">
+                                <div class="mode-ico">📝</div>
+                                <div>
+                                    <div class="mode-title">Text Only</div>
+                                    <div class="mode-desc">Plain text body extraction</div>
+                                </div>
+                                <div class="radio-ring"></div>
+                            </div>
+                        </label>
+
+                        <label class="mode-card">
+                            <input type="radio" name="mode" value="original">
+                            <div class="mode-inner">
+                                <div class="mode-ico">📬</div>
+                                <div>
+                                    <div class="mode-title">Newsletter Original</div>
+                                    <div class="mode-desc">Raw newsletter format</div>
+                                </div>
+                                <div class="radio-ring"></div>
+                            </div>
+                        </label>
+
+                        <label class="mode-card">
+                            <input type="radio" name="mode" value="headersonly" checked>
+                            <div class="mode-inner">
+                                <div class="mode-ico">🗂️</div>
+                                <div>
+                                    <div class="mode-title">Headers Only</div>
+                                    <div class="mode-desc">Cleaned headers with custom params</div>
+                                </div>
+                                <div class="radio-ring"></div>
+                            </div>
+                        </label>
+
+                        <label class="mode-card">
+                            <input type="radio" name="mode" value="bodyonly">
+                            <div class="mode-inner">
+                                <div class="mode-ico">📄</div>
+                                <div>
+                                    <div class="mode-title">Body Only</div>
+                                    <div class="mode-desc">Raw HTML/text body, no headers</div>
+                                </div>
+                                <div class="radio-ring"></div>
+                            </div>
+                        </label>
+
+                        <label class="mode-card">
+                            <input type="radio" name="mode" value="receivedonly">
+                            <div class="mode-inner">
+                                <div class="mode-ico">📡</div>
+                                <div>
+                                    <div class="mode-title">Received Only</div>
+                                    <div class="mode-desc">Extract Received headers only</div>
+                                </div>
+                                <div class="radio-ring"></div>
+                            </div>
+                        </label>
+
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- ═══ RIGHT COLUMN ═══ -->
+        <div class="right-col">
+
+            <!-- PARAMETERS -->
+            <div class="panel">
+                <div class="panel-head">
+                    <div class="panel-ico ico-blue">🎛️</div>
+                    <span class="panel-title">Extraction Parameters</span>
+                </div>
+                <div class="panel-body">
+                    <div class="field">
+                        <label class="f-label">Label / Folder</label>
+                        <select name="label" id="labelSelect" class="f-input">
+                            <option value="">Connect First</option>
+                        </select>
+                        <div class="field-hint" id="labelCount">
+                            <i class="bi bi-envelope-fill"></i> <span>0 emails in folder</span>
+                        </div>
+                    </div>
+                    <div class="params-2col">
+                        <div class="field">
+                            <label class="f-label">Start From</label>
+                            <input type="number" name="start" value="1" class="f-input" min="1">
+                        </div>
+                        <div class="field">
+                            <label class="f-label">Limit</label>
+                            <input type="number" name="limit" value="10" class="f-input" min="1">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ═══ HEADERS PARAMETERS ═══ -->
+            <div class="panel headers-box" id="headersOptions">
+                <div class="panel-head">
+                    <div class="panel-ico ico-yellow">📁</div>
+                    <span class="panel-title">Headers Parameters</span>
+                </div>
+                <div class="panel-body">
+                    <div class="headers-3col">
+                        <div class="field">
+                            <label class="f-label">From Name</label>
+                            <input name="P_FRNAME" class="f-input f-mono" value="[P_FRNAME]" placeholder="[P_FRNAME]">
+                        </div>
+                        <div class="field">
+                            <label class="f-label">Language Code</label>
+                            <input name="LAN6" class="f-input f-mono" value="[6LAN]" placeholder="[6LAN]">
+                        </div>
+                        <div class="field">
+                            <label class="f-label">Return Path</label>
+                            <input name="P_RPATH" class="f-input f-mono" value="[P_RPATH]" placeholder="[P_RPATH]">
+                        </div>
+                    </div>
+                    <div class="headers-2col">
+                        <div class="field">
+                            <label class="f-label">Subject Value</label>
+                            <input name="SUBJECT_VAL" class="f-input f-mono" value="[S]" placeholder="[S]">
+                        </div>
+                        <div class="field">
+                            <label class="f-label">Boundary</label>
+                            <input name="BOUNDARY" class="f-input f-mono" value="[BND]" placeholder="[BND]">
+                        </div>
+                        <div class="field">
+                            <label class="check-tile">
+                                <input type="checkbox" name="addSender1">
+                                <span>Add Sender</span>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="field-hint" style="margin-top:14px;">
+                        <i class="bi bi-info-circle"></i>
+                        <span>Outputs cleaned headers only — body is stripped</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ═══ CLEAN OPTIONS ═══ -->
+            <div class="panel clean-box" id="cleanOptions">
+                <div class="panel-head">
+                    <div class="panel-ico ico-cyan">🛠️</div>
+                    <span class="panel-title">Header Modification</span>
+                </div>
+                <div class="panel-body">
+                    <div class="clean-2col">
+                        <div class="field">
+                            <label class="f-label">Domain Replacement</label>
+                            <input name="domain" class="f-input" value="[RP]" placeholder="[RP]">
+                        </div>
+                        <div class="field">
+                            <label class="f-label">Message-ID Tag</label>
+                            <input name="eid" class="f-input" value="[EID]" placeholder="[EID]">
+                        </div>
+                    </div>
+                    <div class="checks-grid">
+                        <label class="check-tile">
+                            <input type="checkbox" name="replaceDate" checked>
+                            <span>Replace Date</span>
+                        </label>
+                        <label class="check-tile">
+                            <input type="checkbox" name="replaceTo" checked>
+                            <span>Replace To</span>
+                        </label>
+                        <label class="check-tile">
+                            <input type="checkbox" name="keepReceived" checked>
+                            <span>Keep Received</span>
+                        </label>
+                        <label class="check-tile">
+                            <input type="checkbox" name="keepReplyTo" checked>
+                            <span>Keep Reply-To</span>
+                        </label>
+                        <label class="check-tile">
+                            <input type="checkbox" name="addCc">
+                            <span>Auto Add Cc</span>
+                        </label>
+                        <label class="check-tile">
+                            <input type="checkbox" name="addSender">
+                            <span>Add Sender</span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ═══ RESULT PANEL ═══ -->
+            <div class="panel" id="resultPanel">
+                <div class="panel-head">
+                    <div class="panel-ico ico-green">📋</div>
+                    <span class="panel-title">Extraction Result</span>
+                    <span class="badge bg-secondary ms-auto" id="statBadge">0 emails</span>
+                </div>
+                <div class="panel-body">
+                    <textarea id="resultTextarea" readonly placeholder="Extracted headers will appear here..."></textarea>
+                    <div class="result-actions">
+                        <button type="button" class="btn-action btn-copy" id="copyBtn" onclick="copyResult()">
+                            <i class="bi bi-clipboard"></i> Copy
+                        </button>
+                        <button type="button" class="btn-action btn-download" onclick="downloadResult()">
+                            <i class="bi bi-download"></i> Download
+                        </button>
+                        <button type="button" class="btn-action btn-clear" onclick="clearResult()">
+                            <i class="bi bi-trash"></i> Clear
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ACTION -->
+            <div class="panel">
+                <div class="panel-body">
+                    <button type="button" class="btn-extract" id="extractBtn" onclick="startExtraction()">
+                        <i class="bi bi-lightning-charge-fill"></i> Start Extraction
+                    </button>
+
+                    <div class="loading-wrap" id="loadingBox">
+                        <div class="spin"></div>
+                        <span id="loadingTxt" style="font-size:0.8rem; margin-left:8px; font-weight:600;">Extracting emails...</span>
+                    </div>
+
+                    <a href="/logout" class="btn-logout" onclick="handleLogout(event)">
+                        <i class="bi bi-box-arrow-left"></i> Logout
+                    </a>
+                </div>
+            </div>
+
+        </div>
+
+    </div>
+    </form>
+</div>
+
+<script>
+    function togglePassword() {
+        const inp = document.getElementById('passwordInput');
+        const ico = document.getElementById('eyeIco');
+        inp.type = inp.type === 'password' ? 'text' : 'password';
+        ico.className = inp.type === 'text' ? 'bi bi-eye-slash' : 'bi bi-eye';
+    }
+
+    function onEspChange() {
+        const esp = document.getElementById('espSelect').value;
+        const email = document.getElementById('emailInput');
+        const notice = document.getElementById('espNotice');
+        if (esp === 'gmail') {
+            email.placeholder = 'you@gmail.com';
+            notice.innerHTML = '<i class="bi bi-info-circle"></i> <span>Requires 16-character Google App Password</span>';
+        } else {
+            email.placeholder = 'you@sapo.pt';
+            notice.innerHTML = '<i class="bi bi-info-circle"></i> <span>Uses your Sapo.pt Account Password</span>';
+        }
+    }
+
+    function toggleTheme() {
+        document.body.classList.toggle('dm');
+    }
+
+    /* ── MODE SWITCH (AFFICHE HEADERS PARAMETERS) ── */
+    const radios     = document.querySelectorAll("input[name='mode']");
+    const cleanBox   = document.getElementById('cleanOptions');
+    const headersBox = document.getElementById('headersOptions');
+
+    function syncMode() {
+        const checked = document.querySelector("input[name='mode']:checked");
+        if (!checked) return;
+        const val = checked.value;
+        headersBox.style.display = val === 'headersonly' ? 'block' : 'none';
+        cleanBox.style.display   = val === 'clean'       ? 'block' : 'none';
+    }
+    radios.forEach(r => r.addEventListener('change', syncMode));
+    syncMode();
+
+    /* ── CONNECT IMAP ── */
+    async function connectImap() {
+        const email = document.getElementById('emailInput').value.trim();
+        const password = document.getElementById('passwordInput').value.trim();
+        const btn = document.getElementById('btnConnect');
+
+        if (!email || !password) {
+            alert('Please enter your email and password!');
+            return;
+        }
+
+        const originalText = btn.innerHTML;
+        btn.innerHTML = '<div class="spin"></div> Connecting...';
+        btn.disabled = true;
+
+        try {
+            const resp = await fetch('/connect', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: new URLSearchParams({ email, password }).toString()
+            });
+
+            const data = await resp.json();
+
+            if (data.success) {
+                document.getElementById('connDot').classList.add('on');
+                document.getElementById('connLabel').textContent = 'Connected';
+
+                const labelSelect = document.getElementById('labelSelect');
+                labelSelect.innerHTML = '';
+
+                data.folders.forEach(f => {
+                    const opt = document.createElement('option');
+                    opt.value = f.name;
+                    opt.textContent = f.name;
+                    if (f.name.toUpperCase() === 'INBOX') {
+                        opt.selected = true;
+                        opt.setAttribute('data-count', data.defaultInboxCount || 0);
+                    }
+                    labelSelect.appendChild(opt);
+                });
+
+                document.getElementById('labelCount').innerHTML = '<i class="bi bi-envelope-fill"></i> <span>' + (data.defaultInboxCount || 0) + ' emails in folder</span>';
+                alert('Connected successfully to IMAP!');
+            } else {
+                alert('Connection Failed: ' + (data.error || 'Check password'));
+            }
+        } catch (err) {
+            alert('Error: ' + err.message);
+        } finally {
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+        }
+    }
+
+    /* ── START EXTRACTION ── */
+    async function startExtraction() {
+        const form = document.getElementById('mainForm');
+        const extractBtn = document.getElementById('extractBtn');
+        const loadingBox = document.getElementById('loadingBox');
+
+        loadingBox.style.display = 'block';
+        extractBtn.disabled = true;
+
+        try {
+            const formData = new FormData(form);
+            const params = new URLSearchParams();
+            for (const [k, v] of formData.entries()) params.append(k, v);
+
+            const resp = await fetch('/extract', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: params.toString()
+            });
+
+            const text = await resp.text();
+
+            if (!resp.ok || text.startsWith('❌')) {
+                alert(text);
+                return;
+            }
+
+            document.getElementById('resultTextarea').value = text;
+            const count = (text.match(/__SEP__/g) || []).length + 1;
+            document.getElementById('statBadge').textContent = count + ' emails';
+
+            const panel = document.getElementById('resultPanel');
+            panel.style.display = 'block';
+            panel.scrollIntoView({ behavior: 'smooth' });
+
+        } catch (err) {
+            alert('Extraction error: ' + err.message);
+        } finally {
+            loadingBox.style.display = 'none';
+            extractBtn.disabled = false;
+        }
+    }
+
+    function copyResult() {
+        const ta = document.getElementById('resultTextarea');
+        navigator.clipboard.writeText(ta.value).then(() => {
+            const btn = document.getElementById('copyBtn');
+            btn.innerHTML = '<i class="bi bi-clipboard-check"></i> Copied!';
+            setTimeout(() => { btn.innerHTML = '<i class="bi bi-clipboard"></i> Copy'; }, 2000);
+        });
+    }
+
+    function downloadResult() {
+        const text = document.getElementById('resultTextarea').value;
+        if (!text) return;
+        const blob = new Blob([text], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'file_CleanHeadersOnly.txt';
+        a.click();
+        URL.revokeObjectURL(url);
+    }
+
+    function clearResult() {
+        document.getElementById('resultTextarea').value = '';
+        document.getElementById('resultPanel').style.display = 'none';
+    }
+
+    function handleLogout(e) {
+        document.getElementById('connDot').classList.remove('on');
+        document.getElementById('connLabel').textContent = 'Disconnected';
+        document.getElementById('labelSelect').innerHTML = '<option value="">Connect First</option>';
+        clearResult();
+    }
+</script>
+</body>
+</html>
