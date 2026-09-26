@@ -1,62 +1,684 @@
-<div class="field">
-    <label class="f-label">ESP Provider</label>
-    <select id="espSelect" class="f-input" onchange="autoFillDomain()">
-        <option value="gmail">Gmail (imap.gmail.com)</option>
-        <option value="sapo">Sapo.pt (imap.sapo.pt)</option>
-    </select>
-</div>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Email Extraction CMH9</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 
-<div class="field">
-    <label class="f-label">Email Address</label>
-    <input name="email" id="emailInput" class="f-input" type="email" placeholder="you@gmail.com أو you@sapo.pt" required>
-</div>
-
-async function connectImap() {
-    const email = document.querySelector('input[name="email"]').value.trim();
-    const password = document.getElementById('passwordInput').value.trim();
-    const btn = document.querySelector('.btn-connect');
-
-    if (!email || !password) {
-        alert('Please enter email & app password!');
-        return;
-    }
-
-    btn.disabled = true;
-    btn.innerHTML = 'Connecting...';
-
-    try {
-        const resp = await fetch('/connect', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body: new URLSearchParams({ email, password }).toString()
-        });
-        const data = await resp.json();
-
-        if (data.success) {
-            document.getElementById('connDot').classList.add('on');
-            document.getElementById('connLabel').textContent = 'Connected';
-
-            const sel = document.getElementById('labelSelect');
-            sel.innerHTML = '';
-            data.folders.forEach(f => {
-                const opt = document.createElement('option');
-                opt.value = f.name;
-                opt.textContent = f.name;
-                if (f.name.toUpperCase() === 'INBOX') {
-                    opt.selected = true;
-                    opt.setAttribute('data-count', data.defaultInboxCount || 0);
-                }
-                sel.appendChild(opt);
-            });
-            updateCount();
-        } else {
-            alert('Error: ' + data.error);
+    <style>
+        :root {
+            --bg:           #FBF6EF;
+            --bg-panel:     #ffffff;
+            --bg-surface:   #DCE0D9;
+            --bg-input:     #f5f0e8;
+            --bg-hover:     #e8e3db;
+            --line:         rgba(28,60,48,0.10);
+            --line-bright:  rgba(31,122,140,0.40);
+            --accent:       #1f7a8c;
+            --accent-dim:   rgba(31,122,140,0.12);
+            --accent-glow:  rgba(31,122,140,0.30);
+            --cyan:         #022b3a;
+            --cyan-dim:     rgba(2,43,58,0.10);
+            --text:         #022b3a;
+            --text-2:       #2a5060;
+            --text-3:       #7a9caa;
+            --green:        #1f7a8c;
+            --green-dim:    rgba(31,122,140,0.12);
+            --red:          #b94040;
+            --red-dim:      rgba(185,64,64,0.09);
+            --r:            12px;
+            --r-sm:         8px;
         }
-    } catch (err) {
-        alert('Connection error: ' + err.message);
-    } finally {
-        btn.disabled = false;
-        btn.innerHTML = '<i class="bi bi-plug-fill"></i> Connect to IMAP';
+
+        body.dm {
+            --bg:           #022b3a;
+            --bg-panel:     #03364a;
+            --bg-surface:   #04415a;
+            --bg-input:     #032f40;
+            --bg-hover:     #064a65;
+            --line:         rgba(191,219,247,0.10);
+            --line-bright:  rgba(191,219,247,0.38);
+            --accent:       #bfdbf7;
+            --accent-dim:   rgba(191,219,247,0.13);
+            --accent-glow:  rgba(191,219,247,0.28);
+            --cyan:         #bfdbf7;
+            --cyan-dim:     rgba(191,219,247,0.10);
+            --text:         #e8f4ff;
+            --text-2:       #bfdbf7;
+            --text-3:       #4a7a9b;
+            --green:        #bfdbf7;
+            --green-dim:    rgba(191,219,247,0.12);
+            --red:          #f87171;
+            --red-dim:      rgba(248,113,113,0.10);
+        }
+
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            transition: background 0.35s, color 0.35s;
+            overflow-x: hidden;
+        }
+
+        body::before {
+            content: '';
+            position: fixed; inset: 0; z-index: 0; pointer-events: none;
+            background-image:
+                radial-gradient(ellipse 80% 50% at 10% 0%, rgba(31,122,140,0.06) 0%, transparent 60%),
+                radial-gradient(ellipse 60% 40% at 90% 100%, rgba(2,43,58,0.05) 0%, transparent 55%),
+                linear-gradient(rgba(31,122,140,0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(31,122,140,0.03) 1px, transparent 1px);
+            background-size: 100% 100%, 100% 100%, 48px 48px, 48px 48px;
+        }
+
+        .wrap {
+            position: relative; z-index: 1;
+            width: 100%;
+            max-width: 1600px;
+            margin: 0 auto;
+            padding: 36px 32px 60px;
+        }
+        @media (min-width: 1400px) { .wrap { padding: 40px 48px 80px; } }
+        @media (max-width: 900px)  { .wrap { padding: 20px 16px 40px; } }
+
+        /* ── TOP BAR ── */
+        .topbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 32px;
+        }
+
+        .brand { display: flex; align-items: center; gap: 14px; }
+
+        .brand-logo {
+            width: 48px; height: 48px;
+            border-radius: 14px;
+            background: linear-gradient(140deg, #022b3a 0%, #1f7a8c 100%);
+            display: flex; align-items: center; justify-content: center;
+            font-size: 22px;
+            box-shadow: 0 0 0 1px rgba(31,122,140,0.35), 0 8px 24px rgba(31,122,140,0.25);
+            flex-shrink: 0;
+        }
+
+        .brand-name { font-size: 1.2rem; font-weight: 800; letter-spacing: -0.03em; color: var(--text); }
+        .brand-tag {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.65rem; font-weight: 500;
+            color: var(--accent); letter-spacing: 0.1em;
+            text-transform: uppercase; margin-top: 4px;
+        }
+
+        .topbar-right { display: flex; align-items: center; gap: 10px; }
+
+        .status-pill {
+            display: flex; align-items: center; gap: 7px;
+            font-size: 0.72rem; font-weight: 600;
+            font-family: 'IBM Plex Mono', monospace; letter-spacing: 0.05em;
+            padding: 7px 14px; border-radius: 99px;
+            border: 1px solid var(--line); background: var(--bg-surface);
+            color: var(--text-2);
+        }
+
+        .status-dot {
+            width: 7px; height: 7px; border-radius: 50%;
+            background: var(--text-3);
+        }
+        .status-dot.on {
+            background: #10b981; box-shadow: 0 0 8px #10b981;
+            animation: blink 2s ease infinite;
+        }
+        @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+        #themeBtn {
+            width: 40px; height: 40px;
+            border: 1px solid var(--line); background: var(--bg-surface);
+            border-radius: var(--r-sm); font-size: 16px; cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+            transition: all 0.2s; color: var(--text-2);
+        }
+        #themeBtn:hover { border-color: var(--accent); color: var(--accent); }
+
+        /* ── LAYOUT ── */
+        .layout {
+            display: grid;
+            grid-template-columns: 320px 1fr;
+            gap: 24px;
+            align-items: start;
+        }
+        @media (min-width: 1400px) { .layout { grid-template-columns: 360px 1fr; gap: 28px; } }
+        @media (max-width: 900px)  { .layout { grid-template-columns: 1fr; } }
+
+        /* ── PANEL ── */
+        .panel {
+            background: var(--bg-panel);
+            border: 1px solid var(--line);
+            border-radius: 18px; overflow: hidden;
+            box-shadow: 0 1px 0 var(--line), 0 12px 40px rgba(2,43,58,0.10);
+            transition: background 0.35s, border-color 0.35s;
+        }
+        body.dm .panel { box-shadow: 0 1px 0 var(--line), 0 24px 48px rgba(0,0,0,0.50); }
+
+        .panel-head {
+            padding: 18px 24px 16px;
+            border-bottom: 1px solid var(--line);
+            display: flex; align-items: center; gap: 10px;
+        }
+
+        .panel-ico {
+            width: 30px; height: 30px; border-radius: 8px;
+            display: flex; align-items: center; justify-content: center; font-size: 14px;
+        }
+        .ico-blue  { background: var(--accent-dim); border: 1px solid rgba(31,122,140,0.18); }
+        .ico-cyan  { background: var(--cyan-dim); border: 1px solid rgba(2,43,58,0.12); }
+        .ico-green { background: var(--green-dim); border: 1px solid rgba(31,122,140,0.18); }
+
+        .panel-title {
+            font-size: 0.73rem; font-weight: 700;
+            letter-spacing: 0.07em; text-transform: uppercase;
+            color: var(--accent); font-family: 'IBM Plex Mono', monospace;
+        }
+
+        .panel-body { padding: 22px 24px; }
+
+        /* ── FIELD ── */
+        .field { margin-bottom: 15px; }
+        .field:last-child { margin-bottom: 0; }
+
+        .f-label {
+            font-size: 0.71rem; font-weight: 700;
+            letter-spacing: 0.05em; text-transform: uppercase;
+            color: var(--text-2); display: block; margin-bottom: 7px;
+        }
+
+        .f-input {
+            width: 100%; height: 42px;
+            background: var(--bg-input); border: 1px solid var(--line);
+            border-radius: var(--r-sm); color: var(--text);
+            font-family: 'Plus Jakarta Sans', sans-serif; font-size: 0.875rem;
+            padding: 0 14px; outline: none;
+            transition: border-color 0.2s;
+        }
+        .f-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim); }
+
+        .input-wrap { position: relative; }
+        .eye-btn {
+            position: absolute; right: 12px; top: 50%;
+            transform: translateY(-50%);
+            font-size: 14px; color: var(--text-3); cursor: pointer;
+        }
+
+        .field-hint {
+            margin-top: 8px;
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.69rem; font-weight: 500;
+            color: var(--accent);
+            display: flex; align-items: center; gap: 6px;
+        }
+
+        /* ── CONNECT BTN ── */
+        .btn-connect {
+            width: 100%; height: 42px;
+            background: var(--accent-dim); border: 1px solid rgba(31,122,140,0.30);
+            border-radius: var(--r-sm); color: var(--accent);
+            font-size: 0.85rem; font-weight: 700;
+            cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;
+            transition: all 0.2s; margin-top: 12px;
+        }
+        .btn-connect:hover {
+            background: var(--accent); color: #fff;
+        }
+
+        /* ── MODE CARDS ── */
+        .mode-stack { display: flex; flex-direction: column; gap: 8px; }
+        .mode-card { position: relative; cursor: pointer; }
+        .mode-card input[type="radio"] { position: absolute; opacity: 0; width: 0; height: 0; }
+
+        .mode-inner {
+            display: flex; align-items: center; gap: 12px;
+            padding: 12px 15px; border: 1px solid var(--line);
+            border-radius: var(--r-sm); background: var(--bg-surface);
+            transition: all 0.2s;
+        }
+        .mode-card input:checked + .mode-inner {
+            border-color: var(--accent); background: var(--accent-dim);
+        }
+
+        .mode-ico {
+            width: 34px; height: 34px; border-radius: 9px;
+            background: var(--line); display: flex; align-items: center; justify-content: center;
+            font-size: 15px;
+        }
+        .mode-card input:checked + .mode-inner .mode-ico { background: var(--accent); color: #fff; }
+
+        .mode-title { font-size: 0.82rem; font-weight: 700; color: var(--text); }
+        .mode-desc  { font-size: 0.7rem; color: var(--text-2); margin-top: 2px; }
+
+        /* ── RIGHT COL ── */
+        .right-col { display: flex; flex-direction: column; gap: 20px; }
+        .params-2col { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+        .clean-2col { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 18px; }
+        .divider { height: 1px; background: var(--line); margin: 16px 0; }
+
+        .checks-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+        @media (max-width: 620px) { .checks-grid { grid-template-columns: 1fr 1fr; } }
+
+        .check-tile {
+            display: flex; align-items: center; gap: 9px;
+            padding: 10px 13px; border: 1px solid var(--line);
+            border-radius: var(--r-sm); background: var(--bg-surface);
+            cursor: pointer;
+        }
+        .check-tile input { accent-color: var(--accent); }
+        .check-tile span { font-size: 0.76rem; font-weight: 500; color: var(--text-2); }
+
+        .btn-extract {
+            width: 100%; height: 52px;
+            background: var(--accent); border: none; border-radius: var(--r-sm);
+            color: #fff; font-size: 0.92rem; font-weight: 800; cursor: pointer;
+            display: flex; align-items: center; justify-content: center; gap: 10px;
+            transition: all 0.25s; box-shadow: 0 4px 24px var(--accent-glow);
+        }
+        .btn-extract:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        #resultPanel { display: none; }
+        #resultTextarea {
+            width: 100%; min-height: 380px;
+            background: var(--bg-input); border: 1px solid var(--line);
+            border-radius: var(--r-sm); color: var(--text);
+            font-family: 'IBM Plex Mono', monospace; font-size: 0.78rem;
+            padding: 18px 20px; outline: none;
+        }
+
+        .result-actions { display: flex; align-items: center; gap: 10px; margin-top: 14px; }
+        .btn-action {
+            display: flex; align-items: center; gap: 7px;
+            padding: 10px 20px; border-radius: var(--r-sm);
+            font-size: 0.82rem; font-weight: 700; border: none; cursor: pointer;
+        }
+        .btn-copy { background: var(--accent-dim); color: var(--accent); border: 1px solid rgba(31,122,140,0.28); }
+        .btn-download { background: var(--bg-surface); color: var(--text-2); border: 1px solid var(--line); }
+        .btn-clear { background: transparent; color: var(--red); border: 1px solid var(--line); margin-left: auto; }
+
+        .loading-wrap {
+            margin-top: 14px; background: var(--bg-surface);
+            border: 1px solid var(--line); border-radius: var(--r-sm);
+            padding: 16px 20px; display: none;
+        }
+        .spin {
+            width: 18px; height: 18px; border: 2px solid var(--line);
+            border-top-color: var(--accent); border-radius: 50%;
+            animation: spin 0.7s linear infinite; display: inline-block;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
+</head>
+
+<body>
+<div class="wrap">
+
+    <!-- TOPBAR -->
+    <div class="topbar">
+        <div class="brand">
+            <div class="brand-logo">📧</div>
+            <div>
+                <div class="brand-name">Email Extraction #CMH9</div>
+                <div class="brand-tag">Gmail & Sapo.pt &nbsp;·&nbsp; v2.3</div>
+            </div>
+        </div>
+        <div class="topbar-right">
+            <div class="status-pill">
+                <div class="status-dot" id="connDot"></div>
+                <span id="connLabel">Disconnected</span>
+            </div>
+            <button id="themeBtn" onclick="toggleTheme()">
+                <i class="bi bi-sun-fill" id="themeIco"></i>
+            </button>
+        </div>
+    </div>
+
+    <!-- FORM -->
+    <form id="mainForm" onsubmit="return false;">
+    <div class="layout">
+
+        <!-- LEFT COL -->
+        <div style="display:flex;flex-direction:column;gap:20px;">
+
+            <!-- CONNECTION -->
+            <div class="panel">
+                <div class="panel-head">
+                    <div class="panel-ico ico-blue">🔌</div>
+                    <span class="panel-title">Connection</span>
+                </div>
+                <div class="panel-body">
+                    <div class="field">
+                        <label class="f-label">ESP Provider</label>
+                        <select id="espSelect" class="f-input" onchange="onEspChange()">
+                            <option value="gmail">Gmail (imap.gmail.com)</option>
+                            <option value="sapo">Sapo.pt (imap.sapo.pt)</option>
+                        </select>
+                    </div>
+
+                    <div class="field">
+                        <label class="f-label">Email Address</label>
+                        <input name="email" id="emailInput" class="f-input" type="email" placeholder="username@gmail.com" required>
+                    </div>
+
+                    <div class="field">
+                        <label class="f-label">Password / App Password</label>
+                        <div class="input-wrap">
+                            <input type="password" name="password" id="passwordInput" class="f-input" style="padding-right:40px;" placeholder="xxxx xxxx xxxx xxxx" required>
+                            <span class="eye-btn" onclick="togglePassword()">
+                                <i class="bi bi-eye" id="eyeIco"></i>
+                            </span>
+                        </div>
+                        <div class="field-hint" id="espNotice">
+                            <i class="bi bi-info-circle"></i> <span>Requires 16-character Google App Password</span>
+                        </div>
+                    </div>
+
+                    <button type="button" class="btn-connect" id="btnConnect" onclick="connectImap()">
+                        <i class="bi bi-plug-fill"></i> Connect to IMAP
+                    </button>
+                </div>
+            </div>
+
+            <!-- MODE -->
+            <div class="panel">
+                <div class="panel-head">
+                    <div class="panel-ico ico-cyan">⚙️</div>
+                    <span class="panel-title">Download Mode</span>
+                </div>
+                <div class="panel-body">
+                    <div class="mode-stack">
+                        <label class="mode-card">
+                            <input type="radio" name="mode" value="clean" checked>
+                            <div class="mode-inner">
+                                <div class="mode-ico">🧹</div>
+                                <div>
+                                    <div class="mode-title">Clean Headers</div>
+                                    <div class="mode-desc">News-style header rewrite</div>
+                                </div>
+                            </div>
+                        </label>
+                        <label class="mode-card">
+                            <input type="radio" name="mode" value="justtext">
+                            <div class="mode-inner">
+                                <div class="mode-ico">📝</div>
+                                <div>
+                                    <div class="mode-title">Text Only</div>
+                                    <div class="mode-desc">Plain body text only</div>
+                                </div>
+                            </div>
+                        </label>
+                        <label class="mode-card">
+                            <input type="radio" name="mode" value="original">
+                            <div class="mode-inner">
+                                <div class="mode-ico">📬</div>
+                                <div>
+                                    <div class="mode-title">Newsletter Original</div>
+                                    <div class="mode-desc">Raw RFC822 full email</div>
+                                </div>
+                            </div>
+                        </label>
+                        <label class="mode-card">
+                            <input type="radio" name="mode" value="headersonly">
+                            <div class="mode-inner">
+                                <div class="mode-ico">🗂️</div>
+                                <div>
+                                    <div class="mode-title">Headers Only</div>
+                                    <div class="mode-desc">Cleaned headers with custom params</div>
+                                </div>
+                            </div>
+                        </label>
+                        <label class="mode-card">
+                            <input type="radio" name="mode" value="bodyonly">
+                            <div class="mode-inner">
+                                <div class="mode-ico">📄</div>
+                                <div>
+                                    <div class="mode-title">Body Only</div>
+                                    <div class="mode-desc">HTML/Text body without headers</div>
+                                </div>
+                            </div>
+                        </label>
+                        <label class="mode-card">
+                            <input type="radio" name="mode" value="receivedonly">
+                            <div class="mode-inner">
+                                <div class="mode-ico">📡</div>
+                                <div>
+                                    <div class="mode-title">Received Only</div>
+                                    <div class="mode-desc">Extract Received headers only</div>
+                                </div>
+                            </div>
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- RIGHT COL -->
+        <div class="right-col">
+
+            <!-- PARAMS -->
+            <div class="panel">
+                <div class="panel-head">
+                    <div class="panel-ico ico-blue">🎛️</div>
+                    <span class="panel-title">Parameters</span>
+                </div>
+                <div class="panel-body">
+                    <div class="field">
+                        <label class="f-label">Folder / Label</label>
+                        <select name="label" id="labelSelect" class="f-input">
+                            <option value="">Connect First</option>
+                        </select>
+                        <div class="field-hint" id="labelCount">
+                            <i class="bi bi-envelope-fill"></i> <span>0 emails in folder</span>
+                        </div>
+                    </div>
+                    <div class="params-2col">
+                        <div class="field">
+                            <label class="f-label">Start From</label>
+                            <input type="number" name="start" value="1" class="f-input" min="1">
+                        </div>
+                        <div class="field">
+                            <label class="f-label">Limit</label>
+                            <input type="number" name="limit" value="10" class="f-input" min="1">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- RESULT -->
+            <div class="panel" id="resultPanel">
+                <div class="panel-head">
+                    <div class="panel-ico ico-green">📋</div>
+                    <span class="panel-title">Extraction Result</span>
+                </div>
+                <div class="panel-body">
+                    <textarea id="resultTextarea" readonly></textarea>
+                    <div class="result-actions">
+                        <button type="button" class="btn-action btn-copy" id="copyBtn" onclick="copyResult()">
+                            <i class="bi bi-clipboard"></i> Copy
+                        </button>
+                        <button type="button" class="btn-action btn-download" onclick="downloadResult()">
+                            <i class="bi bi-download"></i> Download
+                        </button>
+                        <button type="button" class="btn-action btn-clear" onclick="clearResult()">
+                            <i class="bi bi-trash"></i> Clear
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ACTION BTN -->
+            <div class="panel">
+                <div class="panel-body">
+                    <button type="button" class="btn-extract" id="extractBtn" onclick="startExtraction()">
+                        <i class="bi bi-lightning-charge-fill"></i> Start Extraction
+                    </button>
+                    <div class="loading-wrap" id="loadingBox">
+                        <div class="spin"></div> <span id="loadingTxt" style="font-size:0.8rem; margin-left:8px;">Extracting emails...</span>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+    </div>
+    </form>
+</div>
+
+<!-- JAVASCRIPT: داخل <script> باش مايخرجش ف الشاشة -->
+<script>
+    function togglePassword() {
+        const p = document.getElementById('passwordInput');
+        const ico = document.getElementById('eyeIco');
+        p.type = p.type === 'password' ? 'text' : 'password';
+        ico.className = p.type === 'text' ? 'bi bi-eye-slash' : 'bi bi-eye';
     }
-}
-document.querySelector('.btn-connect').onclick = (e) => { e.preventDefault(); connectImap(); };
+
+    function onEspChange() {
+        const esp = document.getElementById('espSelect').value;
+        const email = document.getElementById('emailInput');
+        const notice = document.getElementById('espNotice');
+        if (esp === 'gmail') {
+            email.placeholder = 'username@gmail.com';
+            notice.innerHTML = '<i class="bi bi-info-circle"></i> <span>Requires 16-character Google App Password</span>';
+        } else {
+            email.placeholder = 'username@sapo.pt';
+            notice.innerHTML = '<i class="bi bi-info-circle"></i> <span>Uses your Sapo.pt Account Password</span>';
+        }
+    }
+
+    function toggleTheme() {
+        document.body.classList.toggle('dm');
+    }
+
+    async function connectImap() {
+        const email = document.getElementById('emailInput').value.trim();
+        const password = document.getElementById('passwordInput').value.trim();
+        const btn = document.getElementById('btnConnect');
+
+        if (!email || !password) {
+            alert('Please enter your email and password!');
+            return;
+        }
+
+        const originalText = btn.innerHTML;
+        btn.innerHTML = '<div class="spin"></div> Connecting...';
+        btn.disabled = true;
+
+        try {
+            const resp = await fetch('/connect', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: new URLSearchParams({ email, password }).toString()
+            });
+
+            const data = await resp.json();
+
+            if (data.success) {
+                document.getElementById('connDot').classList.add('on');
+                document.getElementById('connLabel').textContent = 'Connected (' + email + ')';
+
+                const labelSelect = document.getElementById('labelSelect');
+                labelSelect.innerHTML = '';
+
+                data.folders.forEach(f => {
+                    const opt = document.createElement('option');
+                    opt.value = f.name;
+                    opt.textContent = f.name;
+                    if (f.name.toUpperCase() === 'INBOX') {
+                        opt.selected = true;
+                        opt.setAttribute('data-count', data.defaultInboxCount || 0);
+                    }
+                    labelSelect.appendChild(opt);
+                });
+
+                document.getElementById('labelCount').innerHTML = '<i class="bi bi-envelope-fill"></i> <span>' + (data.defaultInboxCount || 0) + ' emails in folder</span>';
+                alert('Connected successfully to IMAP!');
+            } else {
+                alert('Connection Failed: ' + (data.error || 'Check password'));
+            }
+        } catch (err) {
+            alert('Error: ' + err.message);
+        } finally {
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+        }
+    }
+
+    async function startExtraction() {
+        const form = document.getElementById('mainForm');
+        const extractBtn = document.getElementById('extractBtn');
+        const loadingBox = document.getElementById('loadingBox');
+        const loadingTxt = document.getElementById('loadingTxt');
+
+        loadingBox.style.display = 'block';
+        extractBtn.disabled = true;
+
+        try {
+            const formData = new FormData(form);
+            const params = new URLSearchParams();
+            for (const [k, v] of formData.entries()) params.append(k, v);
+
+            const resp = await fetch('/extract', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: params.toString()
+            });
+
+            const text = await resp.text();
+
+            if (!resp.ok || text.startsWith('❌')) {
+                alert(text);
+                return;
+            }
+
+            document.getElementById('resultTextarea').value = text;
+            document.getElementById('resultPanel').style.display = 'block';
+            document.getElementById('resultPanel').scrollIntoView({ behavior: 'smooth' });
+
+        } catch (err) {
+            alert('Extraction error: ' + err.message);
+        } finally {
+            loadingBox.style.display = 'none';
+            extractBtn.disabled = false;
+        }
+    }
+
+    function copyResult() {
+        const ta = document.getElementById('resultTextarea');
+        navigator.clipboard.writeText(ta.value).then(() => {
+            const btn = document.getElementById('copyBtn');
+            btn.innerHTML = '<i class="bi bi-clipboard-check"></i> Copied!';
+            setTimeout(() => { btn.innerHTML = '<i class="bi bi-clipboard"></i> Copy'; }, 2000);
+        });
+    }
+
+    function downloadResult() {
+        const text = document.getElementById('resultTextarea').value;
+        if (!text) return;
+        const blob = new Blob([text], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'extracted_emails.txt';
+        a.click();
+        URL.revokeObjectURL(url);
+    }
+
+    function clearResult() {
+        document.getElementById('resultTextarea').value = '';
+        document.getElementById('resultPanel').style.display = 'none';
+    }
+</script>
+</body>
+</html>
