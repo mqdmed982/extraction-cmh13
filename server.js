@@ -43,9 +43,8 @@ async function getImapConnection(email, password) {
     return await imaps.connect(config);
 }
 
-// ─── دالة استخراج الـ Headers كاملين بدون خطأ [object Object] ───
+// ─── استخراج الـ Headers ───
 function extractFullHeadersString(msg) {
-    // 1. محاولة استخراج الـ Raw Headers من الإيميل الكامل
     const allPart = msg.parts.find(p => p.which === '');
     if (allPart && allPart.body) {
         const rawStr = typeof allPart.body === 'string' ? allPart.body : allPart.body.toString('utf-8');
@@ -55,13 +54,11 @@ function extractFullHeadersString(msg) {
         }
     }
 
-    // 2. إذا كان جزء HEADER
     const headerPart = msg.parts.find(p => p.which === 'HEADER');
     if (headerPart && headerPart.body) {
         if (typeof headerPart.body === 'string') {
             return headerPart.body;
         }
-        // إذا كان Object: نفكك كل Header سطر بسطر باش مايخرجش [object Object]
         if (typeof headerPart.body === 'object') {
             const lines = [];
             for (const [key, val] of Object.entries(headerPart.body)) {
@@ -152,7 +149,6 @@ app.post('/extract', async (req, res) => {
             return res.send('❌ The selected folder is empty.');
         }
 
-        // جلب الإيميل كاملاً
         const results = await connection.search(['ALL'], { bodies: ['HEADER', ''], markSeen: false });
         if (!results || results.length === 0) {
             connection.end();
@@ -172,7 +168,6 @@ app.post('/extract', async (req, res) => {
             const allPart = msg.parts.find(p => p.which === '');
             const rawEmail = allPart ? (typeof allPart.body === 'string' ? allPart.body : allPart.body.toString('utf-8')) : '';
 
-            // استخراج جميع Headers الحقيقيين كاملين
             const headerStr = extractFullHeadersString(msg);
             const headerEndIndex = rawEmail.search(/\r?\n\r?\n/);
             const bodyStr = headerEndIndex !== -1 ? rawEmail.substring(headerEndIndex).trim() : '';
@@ -206,7 +201,7 @@ app.post('/extract', async (req, res) => {
                 }
 
                 case 'headersonly': {
-                    // ─── تعديل Headers ديال الـ Newsletter مع الحفاظ على كل السطور الأصلية ───
+                    // ─── مسح كاع داكشي لي فوق Return-Path ───
                     const p_frname = req.body.P_FRNAME || '[P_FRNAME]';
                     const lan6 = req.body.LAN6 || '[6LAN]';
                     const p_rpath = req.body.P_RPATH || '[P_RPATH]';
@@ -214,39 +209,37 @@ app.post('/extract', async (req, res) => {
                     const boundary = req.body.BOUNDARY || '[BND]';
                     const addSender1 = req.body.addSender1 === 'on' || req.body.addSender1 === true;
 
-                    const lines = headerStr.split(/\r?\n/);
+                    const allLines = headerStr.split(/\r?\n/);
+
+                    // البحث على البداية ديال Return-Path
+                    let startIndex = allLines.findIndex(line => line.toLowerCase().startsWith('return-path:'));
+                    if (startIndex === -1) {
+                        startIndex = 0;
+                    }
+
+                    // أخذ فقط الأسطر ابتداءً من Return-Path وحذف ما قبلها
+                    const lines = allLines.slice(startIndex);
                     const newLines = [];
-                    let hasReturnPath = false;
                     let hasContentLanguage = false;
 
                     for (let j = 0; j < lines.length; j++) {
                         let line = lines[j];
                         const lower = line.toLowerCase();
 
-                        // 1. تعديل From
-                        if (lower.startsWith('from:')) {
+                        if (lower.startsWith('return-path:')) {
+                            line = `Return-Path: <${p_rpath}>`;
+                        } else if (lower.startsWith('from:')) {
                             const emailMatch = line.match(/<([^>]+)>/);
                             if (emailMatch) {
                                 line = `From: "${p_frname}" <${emailMatch[1]}>`;
                             } else {
                                 line = `From: "${p_frname}"`;
                             }
-                        }
-                        // 2. تعديل Return-Path
-                        else if (lower.startsWith('return-path:')) {
-                            line = `Return-Path: <${p_rpath}>`;
-                            hasReturnPath = true;
-                        }
-                        // 3. تعديل Subject
-                        else if (lower.startsWith('subject:')) {
+                        } else if (lower.startsWith('subject:')) {
                             line = `Subject: ${subjectVal}`;
-                        }
-                        // 4. تعديل Boundary ف Content-Type
-                        else if (lower.includes('boundary=')) {
+                        } else if (lower.includes('boundary=')) {
                             line = line.replace(/boundary=["']?[^"';\r\n]+["']?/i, `boundary="${boundary}"`);
-                        }
-                        // 5. تعديل Content-Language
-                        else if (lower.startsWith('content-language:')) {
+                        } else if (lower.startsWith('content-language:')) {
                             line = `Content-Language: ${lan6}`;
                             hasContentLanguage = true;
                         }
@@ -254,9 +247,13 @@ app.post('/extract', async (req, res) => {
                         newLines.push(line);
                     }
 
-                    if (!hasReturnPath) newLines.unshift(`Return-Path: <${p_rpath}>`);
-                    if (!hasContentLanguage) newLines.push(`Content-Language: ${lan6}`);
-                    if (addSender1) newLines.unshift(`Sender: <${p_rpath}>`);
+                    if (!hasContentLanguage) {
+                        newLines.push(`Content-Language: ${lan6}`);
+                    }
+
+                    if (addSender1) {
+                        newLines.unshift(`Sender: <${p_rpath}>`);
+                    }
 
                     item = newLines.join('\r\n');
                     break;
@@ -273,7 +270,10 @@ app.post('/extract', async (req, res) => {
                     const addSender = req.body.addSender === 'on' || req.body.addSender === true;
                     const addCc = req.body.addCc === 'on' || req.body.addCc === true;
 
-                    const lines = headerStr.split(/\r?\n/);
+                    const allLines = headerStr.split(/\r?\n/);
+                    let startIndex = allLines.findIndex(l => l.toLowerCase().startsWith('return-path:'));
+                    const lines = startIndex !== -1 ? allLines.slice(startIndex) : allLines;
+
                     const cleanH = [];
 
                     for (let line of lines) {
