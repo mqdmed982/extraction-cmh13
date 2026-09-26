@@ -164,6 +164,16 @@ app.post('/extract', async (req, res) => {
 
         const extracted = [];
 
+        // قائمة الـ Headers المراد حذفها نهائياً
+        const dropHeadersList = [
+            'dkim-signature:',
+            'received-spf:',
+            'authentication-results:',
+            'arc-seal:',
+            'arc-message-signature:',
+            'arc-authentication-results:'
+        ];
+
         for (const msg of selected) {
             const allPart = msg.parts.find(p => p.which === '');
             const rawEmail = allPart ? (typeof allPart.body === 'string' ? allPart.body : allPart.body.toString('utf-8')) : '';
@@ -201,7 +211,6 @@ app.post('/extract', async (req, res) => {
                 }
 
                 case 'headersonly': {
-                    // ─── مسح كاع داكشي لي فوق Return-Path ───
                     const p_frname = req.body.P_FRNAME || '[P_FRNAME]';
                     const lan6 = req.body.LAN6 || '[6LAN]';
                     const p_rpath = req.body.P_RPATH || '[P_RPATH]';
@@ -211,19 +220,41 @@ app.post('/extract', async (req, res) => {
 
                     const allLines = headerStr.split(/\r?\n/);
 
-                    // البحث على البداية ديال Return-Path
+                    // 1. مسح ما فوق Return-Path
                     let startIndex = allLines.findIndex(line => line.toLowerCase().startsWith('return-path:'));
-                    if (startIndex === -1) {
-                        startIndex = 0;
+                    if (startIndex === -1) startIndex = 0;
+                    const fromReturnPathLines = allLines.slice(startIndex);
+
+                    // 2. حذف DKIM-Signature و Received-SPF و Authentication-Results
+                    const filteredLines = [];
+                    let isSkipping = false;
+
+                    for (let i = 0; i < fromReturnPathLines.length; i++) {
+                        const line = fromReturnPathLines[i];
+                        const lower = line.toLowerCase();
+
+                        // إذا كان السطر كيبدا بواحد من الـ headers المراد حذفها
+                        if (dropHeadersList.some(dh => lower.startsWith(dh))) {
+                            isSkipping = true;
+                            continue;
+                        }
+
+                        // إذا كان السطر فيه مسافة فالبداية، راه تابع للسطر لي قبلو
+                        if (/^\s+/.test(line)) {
+                            if (isSkipping) continue;
+                        } else {
+                            isSkipping = false;
+                        }
+
+                        filteredLines.push(line);
                     }
 
-                    // أخذ فقط الأسطر ابتداءً من Return-Path وحذف ما قبلها
-                    const lines = allLines.slice(startIndex);
+                    // 3. تعويض القيم (From, Return-Path, Subject, Boundary, Language)
                     const newLines = [];
                     let hasContentLanguage = false;
 
-                    for (let j = 0; j < lines.length; j++) {
-                        let line = lines[j];
+                    for (let j = 0; j < filteredLines.length; j++) {
+                        let line = filteredLines[j];
                         const lower = line.toLowerCase();
 
                         if (lower.startsWith('return-path:')) {
@@ -272,12 +303,24 @@ app.post('/extract', async (req, res) => {
 
                     const allLines = headerStr.split(/\r?\n/);
                     let startIndex = allLines.findIndex(l => l.toLowerCase().startsWith('return-path:'));
-                    const lines = startIndex !== -1 ? allLines.slice(startIndex) : allLines;
+                    const fromReturnPathLines = startIndex !== -1 ? allLines.slice(startIndex) : allLines;
 
                     const cleanH = [];
+                    let isSkipping = false;
 
-                    for (let line of lines) {
+                    for (let line of fromReturnPathLines) {
                         const lower = line.toLowerCase();
+
+                        if (dropHeadersList.some(dh => lower.startsWith(dh))) {
+                            isSkipping = true;
+                            continue;
+                        }
+                        if (/^\s+/.test(line)) {
+                            if (isSkipping) continue;
+                        } else {
+                            isSkipping = false;
+                        }
+
                         if (!keepReceived && lower.startsWith('received:')) continue;
                         if (!keepReplyTo && lower.startsWith('reply-to:')) continue;
                         if (replaceDate && lower.startsWith('date:')) line = 'Date: [DATE]';
