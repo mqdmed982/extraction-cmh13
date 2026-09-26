@@ -18,41 +18,22 @@ app.use(session({
 
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Détection et filtrage: Gmail & Sapo.pt uniquement
-function getImapConfig(email, password) {
-    const cleanEmail = email.trim().toLowerCase();
-    const cleanPassword = password.trim().replace(/\s+/g, '');
-    let host = '';
-
-    if (cleanEmail.endsWith('@gmail.com') || cleanEmail.includes('gmail')) {
-        host = 'imap.gmail.com';
-    } else if (cleanEmail.endsWith('@sapo.pt') || cleanEmail.includes('sapo.pt')) {
-        host = 'imap.sapo.pt';
-    } else {
-        throw new Error('Had l-app khedama ghir b @gmail.com wla @sapo.pt safi!');
+// ─── الدالة لي كانت ناقصاك (Gmail و Sapo.pt فقط) ───
+function getImapHost(email) {
+    const cleanEmail = (email || '').toLowerCase().trim();
+    if (cleanEmail.includes('gmail')) {
+        return 'imap.gmail.com';
     }
-
-    return {
-        imap: {
-            user: cleanEmail,
-            password: cleanPassword,
-            host: host,
-            port: 993,
-            tls: true,
-            tlsOptions: { rejectUnauthorized: false },
-            authTimeout: 15000
-        }
-    };
+    if (cleanEmail.includes('sapo.pt') || cleanEmail.includes('sapo')) {
+        return 'imap.sapo.pt';
+    }
+    throw new Error('Khedam ghir b @gmail.com wla @sapo.pt safi!');
 }
 
-async function getImapConnection(email, password) {
-    const config = getImapConfig(email, password);
-    return await imaps.connect(config);
-}
-
+// ─── اتصال بـ IMAP ───
 async function getImapConnection(email, password) {
     const host = getImapHost(email);
-    const cleanPassword = password.trim().replace(/\s+/g, '');
+    const cleanPassword = (password || '').trim().replace(/\s+/g, '');
     const config = {
         imap: {
             user: email.trim(),
@@ -67,14 +48,16 @@ async function getImapConnection(email, password) {
     return await imaps.connect(config);
 }
 
+// ─── الصفحة الرئيسية ───
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
+// ─── ROUTE: CONNECT ───
 app.post('/connect', async (req, res) => {
     const { email, password } = req.body;
     if (!email || !password) {
-        return res.status(400).json({ success: false, error: 'Email and App Password are required.' });
+        return res.status(400).json({ success: false, error: 'Email and Password are required.' });
     }
 
     let connection;
@@ -114,16 +97,18 @@ app.post('/connect', async (req, res) => {
         });
 
     } catch (err) {
+        console.error('IMAP Connect Error:', err);
         if (connection) {
             try { connection.end(); } catch (e) {}
         }
         return res.status(401).json({
             success: false,
-            error: err.message || 'IMAP Authentication failed. Check your App Password.'
+            error: err.message || 'IMAP Connection failed.'
         });
     }
 });
 
+// ─── ROUTE: EXTRACT ───
 app.post('/extract', async (req, res) => {
     const email = req.body.email || req.session.email;
     const password = req.body.password || req.session.password;
@@ -246,4 +231,8 @@ app.get('/logout', (req, res) => {
     req.session.destroy(() => res.redirect('/'));
 });
 
-app.listen(PORT, () => console.log(`App running: http://localhost:${PORT}`));
+// ضرورية باش يخدم فـ السيرفر العادي وفـ Vercel
+if (process.env.NODE_ENV !== 'production') {
+    app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+}
+module.exports = app;
